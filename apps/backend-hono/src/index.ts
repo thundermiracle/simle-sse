@@ -84,8 +84,8 @@ app.get("/api/stocks/stream", (c) => {
         id: Date.now().toString(),
       });
 
-      // 1秒待機
-      await stream.sleep(1000);
+      // 3秒待機
+      await stream.sleep(2500);
     }
   });
 });
