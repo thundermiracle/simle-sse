@@ -41,7 +41,8 @@ app.use('*', cors({
   origin: ['http://localhost:3000'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
-  exposeHeaders: ['Content-Type'],
+  exposeHeaders: ['Content-Type', 'Cache-Control'],
+  credentials: true,
 }))
 
 // ヘルスチェック
@@ -53,56 +54,41 @@ app.get('/', (c) => {
   })
 })
 
-// API情報
-app.get('/api', (c) => {
-  return c.json({
-    name: 'Stock Monitor API',
-    version: '1.0.0',
-    endpoints: {
-      health: '/',
-      api: '/api',
-      stocks: '/api/stocks - Get available stocks list',
-      sse: '/api/stocks/stream - Real-time stock prices via SSE',
-    }
-  })
-})
-
 // SSE エンドポイント - 全銘柄のリアルタイム株価配信
-app.get('/api/stocks/stream', (c) => {
+app.get("/api/stocks/stream", (c) => {
   return streamSSE(c, async (stream) => {
-    console.log('New SSE client connected')
+    console.log("New SSE client connected");
 
-    const sendStockData = () => {
+    let isActive = true;
+
+    // クライアント切断時のフラグ設定
+    stream.onAbort(() => {
+      console.log("SSE client disconnected");
+      isActive = false;
+    });
+
+    // メインループ
+    while (isActive) {
       // 全銘柄の価格を更新
       for (let i = 0; i < STOCKS.length; i++) {
-        STOCKS[i] = generatePriceUpdate(STOCKS[i])
+        STOCKS[i] = generatePriceUpdate(STOCKS[i]);
       }
 
-      // 全銘柄のデータを送信
-      const stockData = {
-        timestamp: new Date().toISOString(),
-        stocks: STOCKS
-      }
+      // データ送信
+      await stream.writeSSE({
+        data: JSON.stringify({
+          timestamp: new Date().toISOString(),
+          stocks: STOCKS,
+        }),
+        event: "stock-update",
+        id: Date.now().toString(),
+      });
 
-      stream.writeSSE({
-        data: JSON.stringify(stockData),
-        event: 'stock-update'
-      })
+      // 1秒待機
+      await stream.sleep(1000);
     }
-
-    // 初回データ送信
-    sendStockData()
-
-    // 1秒間隔でデータ更新
-    const interval = setInterval(sendStockData, 1000)
-
-    // クライアント切断時のクリーンアップ
-    stream.onAbort(() => {
-      console.log('SSE client disconnected')
-      clearInterval(interval)
-    })
-  })
-})
+  });
+});
 
 // 利用可能な銘柄一覧を取得
 app.get('/api/stocks', (c) => {
