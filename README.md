@@ -1,125 +1,79 @@
 # Simple SSE - リアルタイム株価モニタープロジェクト
 
-TurborepoベースのSSEリアルタイム株価モニタリングシステムです。
+Turborepo をベースにした SSE (Server-Sent Events) による株価モニタリング用モノレポです。Vite + React のフロントエンドと Hono 製バックエンドが連携し、リアルタイムで価格を配信します。
 
 ## プロジェクト構造
-
 ```
 simple-sse/
 ├── apps/
-│   ├── frontend/          # Vite + React + TypeScript + Tailwind CSS + shadcn-ui
-│   └── backend-hono/      # Hono API サーバー
-├── packages/
-│   ├── ui/               # 共有UIコンポーネント (shadcn-ui)
-│   ├── eslint-config/    # 共有ESLint設定
-│   └── typescript-config/ # 共有TypeScript設定
-├── package.json          # ルートpackage.json
-├── turbo.json           # Turborepo設定
-└── pnpm-workspace.yaml  # pnpmワークスペース設定
+│   ├── frontend/       # Vite + React + TypeScript + Tailwind CSS UI
+│   └── backend-hono/   # Hono + TypeScript の SSE API サーバー
+├── package.json        # モノレポ共通スクリプト
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+└── turbo.json          # Turborepo 設定
 ```
 
-## 開発環境セットアップ
+## セットアップ
+1. Node.js 18+ と pnpm を用意します。
+2. 依存関係をインストール:
+   ```bash
+   pnpm install
+   ```
 
-### 必要な環境
-- Node.js 18+
-- pnpm
+## 開発ワークフロー
+- 全サービス同時起動:
+  ```bash
+  pnpm dev
+  ```
+- 個別起動:
+  ```bash
+  pnpm dev --filter frontend       # http://localhost:3000
+  pnpm dev --filter backend-hono   # http://localhost:4000
+  ```
+- 型チェック / Lint / フォーマット:
+  ```bash
+  pnpm type-check
+  pnpm lint
+  pnpm format
+  ```
+- 本番ビルド & バックエンド実行:
+  ```bash
+  pnpm build
+  pnpm --filter backend-hono run start
+  ```
 
-### インストール
-```bash
-pnpm install
-```
+## アーキテクチャと SSE 更新フロー
+- バックエンドはプロセス起動直後から 1〜3 秒間隔で価格を更新し、最新値をメモリに保持します。
+- 更新のたびに `stock-update` イベントを購読中のクライアントへ push。接続直後にも最新スナップショットを送信します。
+- フロントエンドは `EventSource("http://localhost:4000/api/stocks/stream")` でイベントを受信し、ダッシュボードを更新します。
+- 接続を切断するとバックエンドは購読リストからクライアントを除外し、再接続時も最後に計算された価格がそのまま反映されます。
 
-### 開発サーバー起動
+## API エンドポイント
+- `GET /api/stocks` — 利用可能銘柄と最新価格スナップショットを返却。
+- `GET /api/stocks/stream` — `stock-update` SSE ストリーム。payload は以下形式:
+  ```json
+  {
+    "timestamp": "2024-05-01T12:00:00.000Z",
+    "stocks": [
+      {
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "basePrice": 150,
+        "currentPrice": 156.42,
+        "changePercent": 4.28,
+        "lastUpdate": "2024-05-01T11:59:59.500Z"
+      }
+    ]
+  }
+  ```
 
-#### 全アプリケーションを同時に起動
-```bash
-pnpm dev
-```
+## テストと検証
+- 自動テストは未整備のため、変更時は `pnpm dev` でフロントとバックエンドを立ち上げ、SSE の継続配信とエラーログの有無を目視確認してください。
+- 将来的に Vitest や API 用スクリプトを導入する際は実行コマンドを `README` に追記してください。
 
-#### 個別に起動
-```bash
-# フロントエンド (http://localhost:3000)
-pnpm dev --filter frontend
-
-# バックエンド (http://localhost:3001)
-pnpm dev --filter backend-hono
-```
-
-### ビルド
-```bash
-pnpm build
-```
-
-### 型チェック
-```bash
-pnpm type-check
-```
-
-### リント
-```bash
-pnpm lint
-```
-
-## エンドポイント
-
-### バックエンド API (http://localhost:3001)
-- `GET /` - ヘルスチェック
-- `GET /api` - API情報
-- `GET /api/stocks` - 株価データ (将来SSE実装予定)
-
-### フロントエンド (http://localhost:3000)
-- React + TypeScript
-- Tailwind CSS + shadcn-ui
-- Vite開発サーバー
-
-## 技術スタック
-
-### フロントエンド
-- **React 18** - UIライブラリ
-- **TypeScript** - 型安全性
-- **Vite** - 高速ビルドツール
-- **Tailwind CSS v4** - ユーティリティファーストCSS (設定ファイル不要)
-- **@tailwindcss/vite** - Tailwind v4 Viteプラグイン
-- **shadcn-ui** - 美しいUIコンポーネント
-- **Lucide React** - アイコンライブラリ
-
-### バックエンド
-- **Hono** - 高速軽量Webフレームワーク
-- **@hono/node-server** - Node.js統合
-- **TypeScript** - 型安全性
-- **tsx** - TypeScript実行環境
-
-### 開発ツール
-- **Turborepo** - モノレポビルドシステム
-- **pnpm** - 高速パッケージマネージャー
-- **ESLint** - コード品質管理
-- **Prettier** - コードフォーマット
-
-## Tailwind CSS v4 の変更点
-
-- ✅ **設定ファイル不要**: `tailwind.config.js`と`postcss.config.js`を削除
-- ✅ **@tailwindcss/viteプラグイン**: Vite設定でTailwind v4を統合
-- ✅ **シンプルなCSS**: `@import "tailwindcss"`のみでOK
-- ✅ **自動コンテンツ検出**: 全テンプレートファイルを自動発見
-- ✅ **高速ビルド**: v3比較で最大5倍高速、インクリメンタルビルドは100倍以上高速
-
-## 次のステップ
-
-このボイラープレートはSSE (Server-Sent Events) の実装準備が整っています：
-
-1. **バックエンド**: `/api/stocks` エンドポイントでSSEストリーミングを実装
-2. **フロントエンド**: EventSource APIを使用してリアルタイムデータを受信
-3. **UI**: 株価データの表示とリアルタイム更新機能を追加
-
-## 開発状況
-
-✅ Turborepoプロジェクト構造
-✅ フロントエンド (Vite + React + TS)
-✅ Tailwind CSS v4 + shadcn-ui設定 (設定ファイル不要)
-✅ バックエンド (Hono)
-✅ 共有パッケージ (ui, eslint-config, typescript-config)
-✅ 基本動作確認
-
-🟡 SSE実装 (今後の課題)
-🟡 株価データモック
-🟡 リアルタイムUI更新
+## 今後のアイデア
+- SSE ストリームの認証/レート制限対応
+- 本物のマーケットデータフェッチャーの接続
+- UI テストやバックエンド用統合テストの追加
+- Docker 化や CI/CD パイプライン整備
