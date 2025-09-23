@@ -64,8 +64,8 @@ stocksApp.get("/stream", (c) => {
         id: Date.now().toString(),
       });
 
-      // 3秒待機
-      await stream.sleep(2500);
+      // 1~3秒待機
+      await stream.sleep(Math.random() * 2000 + 1000);
     }
   });
 });
