@@ -16,13 +16,13 @@ function App() {
         throw new Error('Failed to fetch stock list')
       }
       const data = await response.json()
-      const stocksWithDashPrices = data.stocks.map((stock: Stock) => ({
+      const normalizedStocks = data.stocks.map((stock: Stock) => ({
         ...stock,
-        currentPrice: 0,
-        changePercent: 0,
-        lastUpdate: new Date().toISOString()
+        currentPrice: stock.currentPrice ?? stock.basePrice,
+        changePercent: stock.changePercent ?? 0,
+        lastUpdate: stock.lastUpdate ?? new Date().toISOString(),
       }))
-      setStocks(stocksWithDashPrices)
+      setStocks(normalizedStocks)
     } catch (error) {
       console.error('Error fetching stock list:', error)
     }

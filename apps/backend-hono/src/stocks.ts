@@ -18,6 +18,25 @@ const STOCKS: Stock[] = [
   { symbol: 'NVDA', name: 'NVIDIA Corp.', basePrice: 500, currentPrice: 500, changePercent: 0, lastUpdate: new Date().toISOString() }
 ]
 
+interface StockUpdatePayload {
+  timestamp: string
+  stocks: Stock[]
+}
+
+type StockSubscriber = (payload: StockUpdatePayload) => void
+
+const subscribers = new Set<StockSubscriber>()
+
+const notifySubscribers = (payload: StockUpdatePayload) => {
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber(payload)
+    } catch (error) {
+      console.error('Failed to notify SSE subscriber:', error)
+    }
+  })
+}
+
 function generatePriceUpdate(stock: Stock): Stock {
   const maxChange = 0.05
   const randomChange = (Math.random() - 0.5) * 2 * maxChange
@@ -34,41 +53,59 @@ function generatePriceUpdate(stock: Stock): Stock {
 
 const stocksApp = new Hono()
 
+const schedulePriceUpdates = () => {
+  const delay = Math.random() * 2000 + 1000
+  setTimeout(() => {
+    for (let i = 0; i < STOCKS.length; i++) {
+      STOCKS[i] = generatePriceUpdate(STOCKS[i])
+    }
+
+    notifySubscribers({
+      timestamp: new Date().toISOString(),
+      stocks: STOCKS,
+    })
+
+    schedulePriceUpdates()
+  }, delay)
+}
+
+schedulePriceUpdates()
+
 // SSE エンドポイント - 全銘柄のリアルタイム株価配信
 stocksApp.get("/stream", (c) => {
   return streamSSE(c, async (stream) => {
     console.log("New SSE client connected");
 
-    let isActive = true;
-
-    // クライアント切断時のフラグ設定
-    stream.onAbort(() => {
-      console.log("SSE client disconnected");
-      isActive = false;
-    });
-
-    // メインループ
-    while (isActive) {
-      // 全銘柄の価格を更新
-      for (let i = 0; i < STOCKS.length; i++) {
-        STOCKS[i] = generatePriceUpdate(STOCKS[i]);
-      }
-
-      // データ送信
+    const sendUpdate = async (payload: StockUpdatePayload) => {
       await stream.writeSSE({
-        data: JSON.stringify({
-          timestamp: new Date().toISOString(),
-          stocks: STOCKS,
-        }),
+        data: JSON.stringify(payload),
         event: "stock-update",
         id: Date.now().toString(),
-      });
-
-      // 1~3秒待機
-      await stream.sleep(Math.random() * 2000 + 1000);
+      })
     }
-  });
-});
+
+    const listener: StockSubscriber = (payload) => {
+      void sendUpdate(payload).catch((error) => {
+        console.error('Failed to push SSE update:', error)
+      })
+    }
+
+    subscribers.add(listener)
+
+    await sendUpdate({
+      timestamp: new Date().toISOString(),
+      stocks: STOCKS,
+    })
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        console.log("SSE client disconnected")
+        subscribers.delete(listener)
+        resolve()
+      })
+    })
+  })
+})
 
 // 利用可能な銘柄一覧を取得
 stocksApp.get('/', (c) => {
@@ -77,7 +114,10 @@ stocksApp.get('/', (c) => {
     stocks: STOCKS.map(stock => ({
       symbol: stock.symbol,
       name: stock.name,
-      basePrice: stock.basePrice
+      basePrice: stock.basePrice,
+      currentPrice: stock.currentPrice,
+      changePercent: stock.changePercent,
+      lastUpdate: stock.lastUpdate,
     }))
   })
 })
